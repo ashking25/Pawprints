@@ -7,14 +7,16 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 from collections import Counter
 from keras.applications.inception_v3 import InceptionV3
-from keras.applications.inception_resnet_v2 import InceptionResNetV2
 from keras.applications.vgg16 import VGG16
+from keras.applications.resnet50 import ResNet50
+from keras.applications.resnet50 import preprocess_input
 from keras.preprocessing import image
-from keras.applications.inception_v3 import preprocess_input
-from keras.applications.inception_resnet_v2 import preprocess_input as preprocess_input_resnet
-from keras.applications.vgg16 import preprocess_input as preprocess_input_vgg16
-from keras.applications.resnet50 import preprocess_input as preprocess_input_resnet50
+#from keras.applications.inception_v3 import preprocess_input
+#from keras.applications.inception_resnet_v2 import preprocess_input as preprocess_input_resnet
+#from keras.applications.vgg16 import preprocess_input as preprocess_input_vgg16
+#from keras.applications.resnet50 import preprocess_input as preprocess_input_resnet50
 from keras.models import Model
+from keras.models import load_model
 from keras.layers import Dense, GlobalAveragePooling2D, GlobalMaxPooling2D
 from keras.layers import Input, Concatenate
 from keras import backend as K
@@ -24,12 +26,13 @@ from pivottablejs import pivot_ui
 from sklearn.utils import class_weight
 from keras.callbacks import TensorBoard
 from skimage import exposure
+import sys
 
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 
-def imageLoader(files, batch_size, y_train):
+def imageLoader(files, batch_size, y_train, df_name):
 
     L = len(files)
 
@@ -44,7 +47,7 @@ def imageLoader(files, batch_size, y_train):
             X = load_images_from_list(files[batch_start:limit])
             X = np.reshape(np.array(X), (np.shape(X)[0], np.shape(X)[1],
                                          np.shape(X)[2], np.shape(X)[3]))
-            X_metadata = load_metadata(files[batch_start:limit].astype('int'))
+            X_metadata = load_metadata(files[batch_start:limit].astype('int'), df_name)
             Y = y_train[batch_start:limit]
             yield [np.array(X),np.array(X_metadata)],Y #a tuple with two numpy arrays with batch_size samples
 
@@ -54,6 +57,9 @@ def imageLoader(files, batch_size, y_train):
 
 def load_images_from_list(files, xpixels=299, ypixels=299):
 
+    if cnn_model == 'ResNet':
+        xpixels = 224
+        ypixels = 224
     images = []
     for f in files:
         #load images
@@ -83,13 +89,13 @@ def load_images_from_list(files, xpixels=299, ypixels=299):
 
         x = np.expand_dims(x, axis=0)
 
-        x = preprocess_input_resnet(x)
+        x = preprocess_input(x)
         images.append(x[0])
     return images
 
-def load_metadata(files):
+def load_metadata(files, df_name):
     """ Load information about size, location, and day of the year """
-    df= pd.read_csv('df_measurements.csv',index_col=0, )
+    df= pd.read_csv(df_name,index_col=0, )
 
     size = np.random.uniform(low=df['min_track'].loc[files], high=df['max_track'].loc[files])#/12. # normalize to 1
 
@@ -105,31 +111,31 @@ def load_metadata(files):
 
     return np.array([size, day_sin, day_cos, lat, long]).T
 
-def my_model(cnn_model):
+def my_model(cnn_model, class_weights):
     # create the base pre-trained model
     if cnn_model == 'Inception':
         base_model = InceptionV3(weights='imagenet', include_top=False)
     elif cnn_model == 'VGG':
         base_model = VGG16(weights='imagenet', include_top=False)
-    elif cnn_model = 'ResNet':
-        base_model = InceptionResNetV2(weights='imagenet', include_top=False)
+    elif cnn_model == 'ResNet':
+        base_model = ResNet50(weights='imagenet', include_top=True)
 
     #medtadata
     metadata_input = Input(batch_shape=(None,5))
 
     # add a global spatial average pooling layer
     x = base_model.output
-    x = GlobalAveragePooling2D()(x)
-
-    #  add some fully-connected layers
-    x = Dense(1024, activation='relu')(x)
+    if cnn_model != 'ResNet':
+        x = GlobalAveragePooling2D()(x)
+        #  add some fully-connected layers
+        x = Dense(1024, activation='relu')(x)
     a = Concatenate()([x, metadata_input])
 
     x = Dense(1024, activation='relu')(a)
     x = Dense(512, activation='relu')(x)
 
     # and a logistic layer -- let's say we have 25 classes
-    predictions = Dense(41, activation='softmax')(x)
+    predictions = Dense(len(class_weights), activation='softmax')(x)
 
     # this is the model we will train
     model = Model(inputs=[base_model.input, metadata_input], outputs=predictions)
@@ -170,34 +176,50 @@ def load_data(filename):
     # Class Weights
     class_weights = class_weight.compute_class_weight('balanced', \
         np.unique(np.array(integer_encoded)), integer_encoded[:,0])
-    return X_train, X_validate, onehot_encoded, onhot_encoded_validate, class_weights
+    return X_train, X_validate, onehot_encoded, onehot_encoded_validate, class_weights
 
-if __init__:
+
+if __name__ == '__main__':
+    cnn_model = sys.argv[1]
+    nblocks = float(sys.argv[2])
     # Load Data
-    X_train, X_validate, onehot_encoded, onhot_encoded_validate, class_weights =
-        load_data('df_measurements_50.csv')
+    print(cnn_model)
+    df_name = 'df_measurements_50.csv'
+    X_train, X_validate, onehot_encoded, onehot_encoded_validate, class_weights = \
+        load_data(df_name)
+    print(X_train)
+    validate_generator = imageLoader(X_validate, 50, onehot_encoded_validate, df_name)
+    X_validate_generated, onehot_encoded_validate_generated = next(validate_generator)
+    train_generator = imageLoader(X_train, 4, onehot_encoded, df_name)
 
     # Load Model
-    model = my_model(cnn_model)
+    if os.path.isfile('model_'+cnn_model+'.h5'):
+        model = load_model('model_'+cnn_model+'.h5')
+        # compile the model (should be done *after* setting layers to non-trainable)
+        adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None,
+                                     decay=0.0, amsgrad=False)
+        model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])#,
+    else:
+        model = my_model(cnn_model, class_weights)
 
-    # train the model on the new data for a few epoch
-    model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
-        verbose=1, class_weight = class_weights,\
-        validation_data=(X_validate_generated, onehot_encoded_validate_generated))
+        # train the model on the new data for a few epoch
+        model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
+            verbose=1, class_weight = class_weights,\
+            validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
-    #Save weights
-    model.save_weights('model_'+cnn_model+'_weights.h5')
+        #Save weights
+        model.save('model_'+cnn_model+'.h5')
 
     # Unfreeze a number of CNN layers
     ntotal_layers = len(model.layers)
-    nadded_layers = 7 #(7 plus 1)
+    nadded_layers = 5 #(7 plus 1)
 
     if cnn_model == 'Inception':
         nlayers = int(nblocks*31) # find out how many layers in a block
     elif cnn_model == 'VGG':
         nlayers = int(nblocks*4)
-    elif cnn_model = 'ResNet':
-        nlayers = int(nblocks*5)
+    elif cnn_model == 'ResNet':
+        nlayers = int(nblocks*1)
 
 
     for layer in model.layers[:ntotal_layers - nadded_layers - nlayers]:
@@ -209,3 +231,11 @@ if __init__:
     adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None,
                                  decay=0.01, amsgrad=False)
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
+
+    # train the model on the new data for a few epoch
+    model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
+        verbose=1, class_weight = class_weights,\
+        validation_data=(X_validate_generated, onehot_encoded_validate_generated))
+
+    #Save weights
+    model.save('model_'+cnn_model+'.h5')
