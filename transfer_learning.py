@@ -233,7 +233,7 @@ if __name__ == '__main__':
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
 
     # train the model on the new data for a few epoch
-    model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
+    model.fit_generator(train_generator, steps_per_epoch=100, epochs=15, \
         verbose=1, class_weight = class_weights,\
         validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
