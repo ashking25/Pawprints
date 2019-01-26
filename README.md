@@ -1,2 +1,2 @@
 # Pawprints
-Computer Vision project to classify animals based on pawprints
+Computer Vision project to identify animals based on pawprints
