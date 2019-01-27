@@ -63,7 +63,7 @@ def load_images_from_list(files, xpixels=299, ypixels=299):
     images = []
     for f in files:
         #load images
-        img_path = 'images_footprints/'+str(int(f))+'.jpg'
+        img_path = '../images_footprints/'+str(int(f))+'.jpg'
         img = image.load_img(img_path)
         x = image.img_to_array(img)
         x[np.isnan(x)]=0
