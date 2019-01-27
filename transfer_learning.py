@@ -42,7 +42,7 @@ def imageLoader(files, batch_size, y_train, df_name):
 
         while batch_start < L:
             limit = min(batch_end, L)
-            X = load_images_from_list(files[batch_start:limit])
+            X = load_images_npy(files[batch_start:limit])
             X = np.reshape(np.array(X), (np.shape(X)[0], np.shape(X)[1],
                                          np.shape(X)[2], np.shape(X)[3]))
             X_metadata = load_metadata(files[batch_start:limit].astype('int'), df_name)
@@ -52,6 +52,18 @@ def imageLoader(files, batch_size, y_train, df_name):
             batch_start += batch_size
             batch_end += batch_size
 
+def load_images_npy(files):
+    #already preprocessed images
+    # just flip and rotate at random
+    images = []
+    for f in files:
+        x = np.load('../images_footprints/'+str(int(f))+'.npy')
+        x = np.rot90(x,k=np.random.choice(range(4)))
+        if np.random.choice(range(2)) == 1:
+            x = np.transpose(x, axes=[1,0,2])
+        x = np.expand_dims(x, axis=0)
+        images.append(x[0])
+    return images
 
 def load_images_from_list(files, xpixels=299, ypixels=299):
 
@@ -181,11 +193,11 @@ if __name__ == '__main__':
     cnn_model = sys.argv[1]
     nblocks = float(sys.argv[2])
     # Load Data
-    
+
     df_name = 'df_measurements_50.csv'
     X_train, X_validate, onehot_encoded, onehot_encoded_validate, class_weights = \
         load_data(df_name)
- 
+
     validate_generator = imageLoader(X_validate, 100, onehot_encoded_validate, df_name)
     X_validate_generated, onehot_encoded_validate_generated = next(validate_generator)
     train_generator = imageLoader(X_train, 32, onehot_encoded, df_name)
@@ -201,8 +213,8 @@ if __name__ == '__main__':
         model = my_model(cnn_model, class_weights)
 
         # train the model on the new data for a few epoch
-        model.fit_generator(train_generator, steps_per_epoch=1000, epochs=10, \
-            verbose=2, class_weight = class_weights,\
+        model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
+            verbose=1, class_weight = class_weights,\
             validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
         #Save weights
@@ -231,8 +243,8 @@ if __name__ == '__main__':
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
 
     # train the model on the new data for a few epoch
-    model.fit_generator(train_generator, steps_per_epoch=1000, epochs=15, \
-        verbose=2, class_weight = class_weights,\
+    model.fit_generator(train_generator, steps_per_epoch=100, epochs=15, \
+        verbose=1, class_weight = class_weights,\
         validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
     #Save weights
