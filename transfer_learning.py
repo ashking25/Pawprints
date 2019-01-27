@@ -189,7 +189,7 @@ if __name__ == '__main__':
     validate_generator = imageLoader(X_validate, 100, onehot_encoded_validate, df_name)
     X_validate_generated, onehot_encoded_validate_generated = next(validate_generator)
     train_generator = imageLoader(X_train, 32, onehot_encoded, df_name)
-
+    print('loaded generator')
     # Load Model
     if os.path.isfile('model_'+cnn_model+'.h5'):
         model = load_model('model_'+cnn_model+'.h5')
@@ -201,7 +201,7 @@ if __name__ == '__main__':
         model = my_model(cnn_model, class_weights)
 
         # train the model on the new data for a few epoch
-        model.fit_generator(train_generator, steps_per_epoch=1000, epochs=10, \
+        model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
             verbose=2, class_weight = class_weights,\
             validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
