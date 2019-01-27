@@ -203,7 +203,7 @@ if __name__ == '__main__':
         model = my_model(cnn_model, class_weights)
 
         # train the model on the new data for a few epoch
-        model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
+        model.fit_generator(train_generator, steps_per_epoch=1000, epochs=10, \
             verbose=1, class_weight = class_weights,\
             validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
@@ -212,7 +212,7 @@ if __name__ == '__main__':
 
     # Unfreeze a number of CNN layers
     ntotal_layers = len(model.layers)
-    nadded_layers = 5 #(7 plus 1)
+    nadded_layers = 7 #(7 plus 1)
 
     if cnn_model == 'Inception':
         nlayers = int(nblocks*31) # find out how many layers in a block
@@ -228,12 +228,12 @@ if __name__ == '__main__':
        layer.trainable = True
 
     # compile the model (should be done *after* setting layers to non-trainable)
-    adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None,
+    adam = keras.optimizers.Adam(lr=0.0001, beta_1=0.9, beta_2=0.999, epsilon=None,
                                  decay=0.01, amsgrad=False)
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
 
     # train the model on the new data for a few epoch
-    model.fit_generator(train_generator, steps_per_epoch=100, epochs=15, \
+    model.fit_generator(train_generator, steps_per_epoch=1000, epochs=15, \
         verbose=1, class_weight = class_weights,\
         validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
