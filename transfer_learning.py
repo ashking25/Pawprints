@@ -59,7 +59,7 @@ def load_images_npy(files):
     # just flip and rotate at random
     images = []
     for f in files:
-        x = np.load('/images_footprints/images_footprints/'+str(int(f))+'.npy')
+        x = np.load('images_footprints/images_footprints/'+str(int(f))+'.npy')
         x = np.rot90(x,k=np.random.choice(range(4)))
         if np.random.choice(range(2)) == 1:
             x = np.transpose(x, axes=[1,0,2])
@@ -200,7 +200,7 @@ if __name__ == '__main__':
 
     validate_generator = imageLoader(X_validate, 100, onehot_encoded_validate, df_name)
     X_validate_generated, onehot_encoded_validate_generated = next(validate_generator)
-    train_generator = imageLoader(X_train, 100, onehot_encoded, df_name)
+    train_generator = imageLoader(X_train, 4, onehot_encoded, df_name)
     X_generated, onehot_encoded_generated = next(train_generator)
     
     # Load Model
@@ -245,9 +245,9 @@ if __name__ == '__main__':
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
 
     # train the model on the new data for a few epoch
-    #model.fit_generator(train_generator, steps_per_epoch=100, epochs=15, \
-    #    verbose=1, class_weight = class_weights,\
-    #    validation_data=(X_validate_generated, onehot_encoded_validate_generated))
+    model.fit_generator(train_generator, steps_per_epoch=100, epochs=15, \
+        verbose=1, class_weight = class_weights,\
+        validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
     #Save weights
-    #model.save('model_'+cnn_model+'.h5')
+    model.save('model_'+cnn_model+'.h5')
