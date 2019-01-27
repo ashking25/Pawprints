@@ -9,12 +9,7 @@ from collections import Counter
 from keras.applications.inception_v3 import InceptionV3
 from keras.applications.vgg16 import VGG16
 from keras.applications.resnet50 import ResNet50
-from keras.applications.resnet50 import preprocess_input
 from keras.preprocessing import image
-#from keras.applications.inception_v3 import preprocess_input
-#from keras.applications.inception_resnet_v2 import preprocess_input as preprocess_input_resnet
-#from keras.applications.vgg16 import preprocess_input as preprocess_input_vgg16
-#from keras.applications.resnet50 import preprocess_input as preprocess_input_resnet50
 from keras.models import Model
 from keras.models import load_model
 from keras.layers import Dense, GlobalAveragePooling2D, GlobalMaxPooling2D
@@ -28,7 +23,14 @@ import sys
 
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
-
+cnn_model = sys.argv[1]
+nblocks = float(sys.argv[2])
+if cnn_model == 'Inception':
+    from keras.applications.inception_v3 import preprocess_input
+elif cnn_model == 'VGG':
+    from keras.applications.vgg16 import preprocess_input
+elif cnn_model == 'ResNet':
+    from keras.applications.resnet50 import preprocess_input
 
 def imageLoader(files, batch_size, y_train, df_name):
 
@@ -42,7 +44,7 @@ def imageLoader(files, batch_size, y_train, df_name):
 
         while batch_start < L:
             limit = min(batch_end, L)
-            X = load_images_npy(files[batch_start:limit])
+            X = load_images_from_list(files[batch_start:limit])
             X = np.reshape(np.array(X), (np.shape(X)[0], np.shape(X)[1],
                                          np.shape(X)[2], np.shape(X)[3]))
             X_metadata = load_metadata(files[batch_start:limit].astype('int'), df_name)
@@ -190,8 +192,6 @@ def load_data(filename):
 
 
 if __name__ == '__main__':
-    cnn_model = sys.argv[1]
-    nblocks = float(sys.argv[2])
     # Load Data
 
     df_name = 'df_measurements_50.csv'
