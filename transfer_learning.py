@@ -21,8 +21,6 @@ from keras.layers import Dense, GlobalAveragePooling2D, GlobalMaxPooling2D
 from keras.layers import Input, Concatenate
 from keras import backend as K
 import keras
-import bqplot
-from pivottablejs import pivot_ui
 from sklearn.utils import class_weight
 from keras.callbacks import TensorBoard
 from skimage import exposure
@@ -183,14 +181,14 @@ if __name__ == '__main__':
     cnn_model = sys.argv[1]
     nblocks = float(sys.argv[2])
     # Load Data
-    print(cnn_model)
+    
     df_name = 'df_measurements_50.csv'
     X_train, X_validate, onehot_encoded, onehot_encoded_validate, class_weights = \
         load_data(df_name)
-    print(X_train)
-    validate_generator = imageLoader(X_validate, 50, onehot_encoded_validate, df_name)
+ 
+    validate_generator = imageLoader(X_validate, 100, onehot_encoded_validate, df_name)
     X_validate_generated, onehot_encoded_validate_generated = next(validate_generator)
-    train_generator = imageLoader(X_train, 4, onehot_encoded, df_name)
+    train_generator = imageLoader(X_train, 32, onehot_encoded, df_name)
 
     # Load Model
     if os.path.isfile('model_'+cnn_model+'.h5'):
@@ -204,7 +202,7 @@ if __name__ == '__main__':
 
         # train the model on the new data for a few epoch
         model.fit_generator(train_generator, steps_per_epoch=1000, epochs=10, \
-            verbose=1, class_weight = class_weights,\
+            verbose=2, class_weight = class_weights,\
             validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
         #Save weights
@@ -234,7 +232,7 @@ if __name__ == '__main__':
 
     # train the model on the new data for a few epoch
     model.fit_generator(train_generator, steps_per_epoch=1000, epochs=15, \
-        verbose=1, class_weight = class_weights,\
+        verbose=2, class_weight = class_weights,\
         validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
     #Save weights
