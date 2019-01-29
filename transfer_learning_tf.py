@@ -4,9 +4,11 @@ import matplotlib.pyplot as plt
 import sklearn
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from keras.applications.inception_v3 import InceptionV3
+from keras.applications.vgg16 import VGG16
+from keras.applications.resnet50 import ResNet50
 from sklearn.preprocessing import OneHotEncoder
 from collections import Counter
-from keras.applications.resnet50 import preprocess_input
 from keras.preprocessing import image
 from keras.models import Model
 from keras.models import load_model, Sequential
@@ -28,6 +30,12 @@ os.environ['KMP_DUPLICATE_LIB_OK']='True'
 cnn_model = sys.argv[1]
 nblocks = float(sys.argv[2])
 
+if cnn_model == 'Inception':
+    from keras.applications.inception_v3 import preprocess_input
+elif cnn_model == 'VGG':
+    from keras.applications.vgg16 import preprocess_input
+elif cnn_model == 'ResNet':
+    from keras.applications.resnet50 import preprocess_input
 
 def imageLoader(files, batch_size, y_train, df_name):
 
@@ -131,17 +139,22 @@ def load_metadata(files):
 
 def my_model(cnn_model, class_weights, target_width=224):
     # create the base pre-trained model
+    if cnn_model == 'Inception':
+        base_model = InceptionV3(weights='imagenet', include_top=False)
+    elif cnn_model == 'VGG':
+        base_model = VGG16(weights='imagenet', include_top=False)
+    elif cnn_model == 'ResNet':
+        base_model = ResNet50(weights='imagenet', include_top=True)
 
     #medtadata
     metadata_input = Input(batch_shape=(None,5))
 
     # add a global spatial average pooling layer
-    graph = tf.get_default_graph()
-    mobilenet_features_module = hub.Module(hub_to_use)
-
-    input = Input(batch_shape=(None, target_width, target_width, 3))
-    base_model = Lambda(Lambda(mobilenet_features_module))(input)
-    a = Concatenate()([base_model, metadata_input])
+    x = base_model.output
+    if cnn_model != 'ResNet':
+        x = GlobalAveragePooling2D()(x)
+        #  add some fully-connected layers
+    a = Concatenate()([x, metadata_input])
 
     x = Dense(1024, activation='relu')(a)
     x = Dense(512, activation='relu')(x)
@@ -150,35 +163,18 @@ def my_model(cnn_model, class_weights, target_width=224):
     predictions = Dense(len(class_weights), activation='softmax')(x)
 
     # this is the model we will train
-    model = Model(inputs=[input, metadata_input], outputs=predictions)
+    model = Model(inputs=[base_model.input, metadata_input], outputs=predictions)
 
     # first: train only the top layers (which were randomly initialized)
     # i.e. freeze all convolutional InceptionV3 layers
-    for layer in model.layers[:-5]:
+    for layer in base_model.layers:
         layer.trainable = False
 
     # compile the model (should be done *after* setting layers to non-trainable)
-    adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None,
+    adam = keras.optimizers.Adam(lr=0.003, beta_1=0.9, beta_2=0.999, epsilon=None,
                                  decay=0.0, amsgrad=False)
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])#,
-    #model_total=Sequential()
-    #model_total.add(Lambda(mobilenet_features_module, input_shape=(target_width, target_width,3)))
-
-    #metadata_input = Sequential()
-    #model_total.add([model_total, metadata_input])
-    #model_total.add(Dense(len(class_weights), activation='softmax'))
-    #sess = K.get_session()
-    #init = tf.global_variables_initializer()
-    #sess.run(init)
-    #model_total.layers[1].set_weights(head_model.layers[0].get_weights())
-
-
-    # compile the model (should be done *after* setting layers to non-trainable)
-    #adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None,
-#                                 decay=0.0, amsgrad=False)
-    #model_total.compile(optimizer=adam, loss='categorical_crossentropy',
-#                metrics=['accuracy'])
-    return model#_total
+    return model
 
 def load_data(filename):
     """ load data and class weights"""
@@ -220,9 +216,9 @@ if __name__ == '__main__':
     X_train, X_validate, onehot_encoded, onehot_encoded_validate, class_weights = \
         load_data(df_name)
 
-    validate_generator = imageLoader(X_validate, 100, onehot_encoded_validate, df_name)
+    validate_generator = imageLoader(X_validate, 500, onehot_encoded_validate, df_name)
     X_validate_generated, onehot_encoded_validate_generated = next(validate_generator)
-    train_generator = imageLoader(X_train, 32, onehot_encoded, df_name)
+    train_generator = imageLoader(X_train, 4, onehot_encoded, df_name)
 
     # Load Model
     if os.path.isfile('model_'+cnn_model+'.h5'):
@@ -232,10 +228,10 @@ if __name__ == '__main__':
                                      decay=0.0, amsgrad=False)
         model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])#,
     else:
-        model = my_model(cnn_model, class_weights)
-        print(model.summary())
+        final_model = my_model(cnn_model, class_weights)
+        #print(final_model.summary())
         # train the model on the new data for a few epoch
-        model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
+        final_model.fit_generator(train_generator, steps_per_epoch=100, epochs=10, \
             verbose=1, class_weight = class_weights,\
             validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
@@ -251,8 +247,14 @@ if __name__ == '__main__':
                                  decay=0.01, amsgrad=False)
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
 
+
+    #callbacks
+    callbacks = keras.callbacks.ModelCheckpoint('../', monitor='val_loss',
+        verbose=0, save_best_only=True, save_weights_only=False, mode='auto', period=5)
+
+
     # train the model on the new data for a few epoch
-    model.fit_generator(train_generator, steps_per_epoch=1000, epochs=15, \
+    model.fit_generator(train_generator, steps_per_epoch=1000, epochs=100, \
         verbose=1, class_weight = class_weights,\
         validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
