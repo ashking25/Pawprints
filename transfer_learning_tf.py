@@ -28,7 +28,7 @@ from imblearn.over_sampling import RandomOverSampler
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 cnn_model = sys.argv[1]
-nblocks = float(sys.argv[2])
+cnn_name = sys.argv[2]
 
 if cnn_model == 'Inception':
     from keras.applications.inception_v3 import preprocess_input
@@ -170,14 +170,11 @@ def my_model(cnn_model, class_weights, target_width=224):
     #if cnn_model != 'ResNet':
     x = GlobalAveragePooling2D()(x_input)
     #  add some fully-connected layers
-    a = Concatenate()([x, metadata_input])
-
-    x = Dense(1024, activation='relu')(a)
-    #x = BatchNormalization()(x)
-    x = Dense(512, activation='relu')(x)
-    #x = BatchNormalization()(x)
-    # and a logistic layer -- let's say we have 25 classes
-    predictions = Dense(len(class_weights), activation='softmax')(x)
+    if cnn_name == 'First':
+        predictions = Dense(len(class_weights), activation='softmax')(x)
+    else:
+        a = Concatenate()([x, metadata_input])
+        predictions = Dense(len(class_weights), activation='softmax')(a)
 
     # this is the model we will train
     model = Model(inputs=[x_input, metadata_input], outputs=predictions)
@@ -198,12 +195,17 @@ def my_model(cnn_model, class_weights, target_width=224):
 def load_data(filename):
     """ load data and class weights"""
     names = np.loadtxt('../images_categories_names.txt', dtype='str', delimiter=' ')
+    names_top5 = []
+    top5 = ['Raccoon', 'Coyote', 'Deer', 'Bobcat', 'Bear']
+    for n in names:
+        if set(set(n.split('/')) & set(top5)):
+            names_top5.append(n)
     y = []
     x = []
-    for n in names:
+    for n in names_top5:
         y.append(n.split('/')[1])
         x.append(n.split('/')[-1])
-    X_train, X_test, y_train, y_test = train_test_split(names,y, test_size=0.20, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(names_top5, y, test_size=0.20, random_state=42)
     X_validate, X_test, y_validate, y_test = train_test_split(X_test, y_test, test_size=0.50, random_state=42)
 
     print('here')
@@ -236,6 +238,7 @@ if __name__ == '__main__':
     # Load Data
 
     df_name = '../df_measurements_50.csv'
+
     X_train, X_validate, onehot_encoded, onehot_encoded_validate, class_weights = \
         load_data(df_name)
     # Load pretrained models
@@ -247,9 +250,9 @@ if __name__ == '__main__':
     elif cnn_model == 'ResNet':
         base_model = ResNet50(weights='imagenet', include_top=False)    
     print('here')
-    validate_generator = imageLoader(X_validate, base_model, 8, onehot_encoded_validate, df_name)
+    validate_generator = imageLoader(X_validate, base_model, 5, onehot_encoded_validate, df_name)
     X_validate_generated, onehot_encoded_validate_generated = next(validate_generator)
-    for i in range(50):
+    for i in range(60):
         print('validate', i)
         # add more validation data
         X_validate_generated_extra, onehot_encoded_validate_generated_extra = next(validate_generator)
@@ -260,8 +263,8 @@ if __name__ == '__main__':
     train_generator = imageLoader(X_train, base_model, 8, onehot_encoded, df_name)
     print('built generators')
     # Load Model
-    if os.path.isfile('../model_'+cnn_model+'.h5'):
-        model = load_model('../model_'+cnn_model+'.h5')
+    if os.path.isfile('../model_'+cnn_model+'_'+cnn_name+'.h5'):
+        model = load_model('../model_'+cnn_model+'_'+cnn_name+'.h5')
         # compile the model (should be done *after* setting layers to non-trainable)
         adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None,
                                      decay=0.0, amsgrad=False)
@@ -271,33 +274,34 @@ if __name__ == '__main__':
         model = my_model(cnn_model, class_weights)
         #print(final_model.summary())
         # train the model on the new data for a few epoch
-        model.fit_generator(train_generator, steps_per_epoch=100, epochs=5, \
+        model.fit_generator(train_generator, steps_per_epoch=150, epochs=5, \
             verbose=1, class_weight = class_weights,\
             validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
         #Save weights
-        model.save('../model_'+cnn_model+'.h5')
+        model.save('../model_'+cnn_model+'_'+cnn_name+'.h5')
 
     # Unfreeze a number of CNN layers
     for layer in model.layers:
        layer.trainable = True
 
     # compile the model (should be done *after* setting layers to non-trainable)
-    adam = keras.optimizers.Adam(lr=0.01, beta_1=0.9, beta_2=0.999, epsilon=None,
+    adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None,
                                  decay=0.01, amsgrad=False)
     #model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
     model.compile(optimizer=adam, loss='kullback_leibler_divergence', metrics=['accuracy'])
 
     #callbacks
-    callbacks = keras.callbacks.ModelCheckpoint('../model_'+cnn_model+'.h5', monitor='val_loss',
+    callbacks = keras.callbacks.ModelCheckpoint('../model_'+cnn_model+'_'+cnn_name+'.h5', monitor='val_loss',
         verbose=0, save_best_only=True, save_weights_only=False, mode='auto', period=5)
 
 
     # train the model on the new data for a few epoch
-    model.fit_generator(train_generator, steps_per_epoch=100, epochs=100, \
+    model.fit_generator(train_generator, steps_per_epoch=150, epochs=15, \
         verbose=2, class_weight = class_weights,\
         validation_data=(X_validate_generated, onehot_encoded_validate_generated),\
         callbacks=[callbacks])
 
+    np.save('model_history_'+cnn_model+'_'+cnn_name, model.history.history)
     #Save weights
     #model.save('model_'+cnn_model+'.h5')
