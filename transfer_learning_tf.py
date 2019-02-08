@@ -12,7 +12,7 @@ from collections import Counter
 from keras.preprocessing import image
 from keras.models import Model
 from keras.models import load_model, Sequential
-from keras.layers import Dense, GlobalAveragePooling2D
+from keras.layers import Dense, Flatten, GlobalAveragePooling2D, GlobalMaxPooling2D
 from keras.layers import Input, Concatenate, Lambda, BatchNormalization
 from keras import backend as K
 import keras
@@ -20,6 +20,7 @@ from sklearn.utils import class_weight
 from keras.callbacks import TensorBoard
 from skimage import exposure
 import sys
+import cv2
 #import tensorflow_hub as hub
 #import tensorflow as tf
 #hub_to_use="https://tfhub.dev/google/imagenet/resnet_v2_50/feature_vector/1"
@@ -29,6 +30,16 @@ import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 cnn_model = sys.argv[1]
 cnn_name = sys.argv[2]
+
+def adjust_gamma(image, gamma=1.0):
+
+   invGamma = 1.0 / gamma
+   table = np.array([((i / 255.0) ** invGamma) * 255
+      for i in np.arange(0, 256)]).astype("uint8")
+
+   return cv2.LUT(image, table)
+
+
 
 if cnn_model == 'Inception':
     from keras.applications.inception_v3 import preprocess_input
@@ -84,17 +95,26 @@ def load_images_from_list(files, base_model, xpixels=299, ypixels=299):
         img_path = '../'+f
         img = image.load_img(img_path)#, target_size=(xpixels, ypixels))
         x = image.img_to_array(img)
+#        x = cv2.imread(img_path)
+
         x[np.isnan(x)]=0
         #if 1 == 1:
             # don't need to smooth or flip right now
         x = x/np.max(x)
-        x = exposure.adjust_gamma(x, gamma=1./2.2, gain=1)*256
-        
+        if cnn_name == 'First':
+            x = x*255.
+        else:
+            x = exposure.adjust_gamma(x, gamma=1./2.2, gain=1)*255
+            #x = adjust_gamma(x, 1./2.2)
             #x = exposure.equalize_adapthist(x/np.max(x), clip_limit=0.03)*256
-            #x = np.rot90(x,k=np.random.choice(range(4)))
-            #if np.random.choice(range(2)) == 1:
-            #    x = np.transpose(x, axes=[1,0,2])
-
+        x = np.rot90(x,k=np.random.choice(range(4)))
+        if np.random.choice(range(2)) == 1:
+            x = np.transpose(x, axes=[1,0,2])
+        #x = cv2.GaussianBlur(x, (15, 15), 0)
+        #thresh = 250
+        #edges = cv2.Canny(x, threshold1=thresh, threshold2=thresh, apertureSize=5, L2gradient=True)
+        #x = np.expand_dims(-edges,axis=-1)*x
+        x = np.array(x)
         #Reshape
         if x.shape[0] < xpixels or x.shape[1] < ypixels:
             # pad image with zeros
@@ -162,15 +182,16 @@ def my_model(cnn_model, class_weights, target_width=224):
     #medtadata
     metadata_input = Input(batch_shape=(None,5))
 
-    # add a global spatial average pooling layer
-    #x_input = Input(batch_shape=(None, None, None, 2048))
-    #x = base_model.output
-    print('shape',np.shape(X_validate_generated[0]))
-    
-    #if cnn_model != 'ResNet':
-    x = GlobalAveragePooling2D()(x_input)
+    if cnn_name != 'Flatten':
+        # add a global spatial average pooling layer
+        x = GlobalAveragePooling2D()(x_input)
+        #x = Concatenate()([x, metadata_input])
+    else:
+        x = GlobalMaxPooling2D()(x_input)
+        #x = Dense(1024, activation='relu')(x)
+       # x = Concatenate()([x, metadata_input])
     #  add some fully-connected layers
-    if cnn_name == 'First':
+    if cnn_name != 'Metadata':
         predictions = Dense(len(class_weights), activation='softmax')(x)
     else:
         a = Concatenate()([x, metadata_input])
@@ -190,6 +211,7 @@ def my_model(cnn_model, class_weights, target_width=224):
 #    model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])#,
 
     model.compile(optimizer=adam, loss='kullback_leibler_divergence', metrics=['accuracy'])
+    print(model.summary())
     return model
 
 def load_data(filename):
@@ -250,7 +272,7 @@ if __name__ == '__main__':
     elif cnn_model == 'ResNet':
         base_model = ResNet50(weights='imagenet', include_top=False)    
     print('here')
-    validate_generator = imageLoader(X_validate, base_model, 5, onehot_encoded_validate, df_name)
+    validate_generator = imageLoader(X_validate, base_model, 8, onehot_encoded_validate, df_name)
     X_validate_generated, onehot_encoded_validate_generated = next(validate_generator)
     for i in range(60):
         print('validate', i)
@@ -274,19 +296,19 @@ if __name__ == '__main__':
         model = my_model(cnn_model, class_weights)
         #print(final_model.summary())
         # train the model on the new data for a few epoch
-        model.fit_generator(train_generator, steps_per_epoch=150, epochs=5, \
-            verbose=1, class_weight = class_weights,\
-            validation_data=(X_validate_generated, onehot_encoded_validate_generated))
+#        model.fit_generator(train_generator, steps_per_epoch=250, epochs=5, \
+#            verbose=2, class_weight = class_weights,\
+#            validation_data=(X_validate_generated, onehot_encoded_validate_generated))
 
         #Save weights
-        model.save('../model_'+cnn_model+'_'+cnn_name+'.h5')
+#        model.save('../model_'+cnn_model+'_'+cnn_name+'.h5')
 
     # Unfreeze a number of CNN layers
     for layer in model.layers:
        layer.trainable = True
 
     # compile the model (should be done *after* setting layers to non-trainable)
-    adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None,
+    adam = keras.optimizers.Adam(lr=0.003, beta_1=0.9, beta_2=0.999, epsilon=None,
                                  decay=0.01, amsgrad=False)
     #model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
     model.compile(optimizer=adam, loss='kullback_leibler_divergence', metrics=['accuracy'])
@@ -297,7 +319,7 @@ if __name__ == '__main__':
 
 
     # train the model on the new data for a few epoch
-    model.fit_generator(train_generator, steps_per_epoch=150, epochs=15, \
+    model.fit_generator(train_generator, steps_per_epoch=250, epochs=50, \
         verbose=2, class_weight = class_weights,\
         validation_data=(X_validate_generated, onehot_encoded_validate_generated),\
         callbacks=[callbacks])
